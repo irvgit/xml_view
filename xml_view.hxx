@@ -35,36 +35,11 @@ namespace irv::views::xml {
             std::ranges::forward_range<tp_type_t> &&
             iterator_of_value_type_char<std::ranges::iterator_t<tp_type_t>>;
 
-        template<
-            typename tp_type1_t,
-            typename tp_type2_t
-        >
-        concept nothrow_comparable_with =
-            requires (
-                const std::remove_cvref_t<tp_type1_t>& p_left,
-                const std::remove_cvref_t<tp_type2_t>& p_right
-            ) {
-                requires(
-                    noexcept(p_left == p_right) &&
-                    noexcept(p_right == p_left)
-                );
-            };
-
-        template<typename tp_type_t>
-        concept nothrow_comparable =
-            nothrow_comparable_with<
-                tp_type_t,
-                tp_type_t
-            >;
-
-        template<typename tp_type_t>
-        concept nothrow_preincrementable = noexcept(++std::declval<tp_type_t>());
-
         struct is_iterator_default_initialized_fn {
             template<std::forward_iterator tp_iterator_t>
             [[nodiscard]]
             auto constexpr operator()(tp_iterator_t p_iterator)
-            const noexcept(nothrow_comparable<tp_iterator_t>)
+            const noexcept(noexcept(p_iterator == tp_iterator_t{}))
             -> bool {
                 return p_iterator == tp_iterator_t{};
             }
@@ -262,10 +237,7 @@ namespace irv::views::xml {
         element_segmentation<tp_iterator_t>;
 
         template<std::forward_iterator tp_iterator_t>
-        element_segmentation(
-            tp_iterator_t,
-            tp_iterator_t
-        ) ->
+        element_segmentation(tp_iterator_t) ->
         element_segmentation<tp_iterator_t>;
 
         template<typename tp_iterator_t>
@@ -545,8 +517,8 @@ namespace irv::views::xml {
                 [[nodiscard]]
                 auto constexpr operator++(int)
                 noexcept(
-                    std::is_nothrow_copy_constructible_v<iterator> &&
-                    nothrow_preincrementable<iterator>
+                    noexcept(++*this) &&
+                    noexcept(std::is_nothrow_copy_constructible_v<iterator>)
                 )
                 requires(std::ranges::forward_range<m_base_view_t>) {
                     auto l_copy = *this;
@@ -554,16 +526,16 @@ namespace irv::views::xml {
                     return l_copy;
                 }
 
-                auto constexpr operator--()    = delete("TODO");
-                auto constexpr operator--(int) = delete("TODO");
-
                 [[nodiscard]]
                 friend
                 auto constexpr operator==(
                     const iterator& p_iterator1,
                     const iterator& p_iterator2
                 )
-                noexcept(nothrow_comparable<m_base_iterator_t>)
+                noexcept(noexcept(
+                    std::ranges::begin(p_iterator1.m_current.m_element_segmentation.tag) ==
+                    std::ranges::begin(p_iterator2.m_current.m_element_segmentation.tag)
+                ))
                 -> bool
                 requires(std::equality_comparable<m_base_iterator_t>) {
                     return
@@ -571,24 +543,25 @@ namespace irv::views::xml {
                         std::ranges::begin(p_iterator2.m_current.m_element_segmentation.tag);
                 }
 
+                template<typename tp_self_t>
                 [[nodiscard]]
-                auto constexpr has_error()
+                auto constexpr has_error(this tp_self_t&& p_self)
                 noexcept(noexcept(
-                    std::ranges::end(m_current.body) == iterator{} &&
-                    !is_iterator_default_initialized(std::ranges::end(m_current.tag))
+                    is_iterator_default_initialized(std::ranges::begin(std::forward<tp_self_t>(p_self).m_current.m_element_segmentation.tag)) &&
+                    !is_iterator_default_initialized(std::ranges::end(std::forward<tp_self_t>(p_self).m_current.m_element_segmentation.tag))
                 ))
                 -> bool {
                     return
-                        std::ranges::end(m_current.body) == iterator{} &&
-                        !is_iterator_default_initialized(std::ranges::end(m_current.tag));
+                        is_iterator_default_initialized(std::ranges::begin(std::forward<tp_self_t>(p_self).m_current.m_element_segmentation.tag)) &&
+                        !is_iterator_default_initialized(std::ranges::end(std::forward<tp_self_t>(p_self).m_current.m_element_segmentation.tag));
                 }
 
                 template<typename tp_self_t>
                 [[nodiscard]]
                 auto constexpr get_error_position(this tp_self_t&& p_self)
                 noexcept(std::is_nothrow_copy_constructible_v<iterator>)
-                -> iterator {
-                    return std::ranges::end(std::forward<tp_self_t>(p_self).tag);
+                -> m_base_iterator_t {
+                    return std::ranges::end(std::forward<tp_self_t>(p_self).m_current.m_element_segmentation.tag);
                 }
             };
 
@@ -619,12 +592,7 @@ namespace irv::views::xml {
                     const iterator<tp_is_const2>& p_iterator,
                     [[maybe_unused]] const sentinel& p_sentinel
                 )
-                noexcept(
-                    nothrow_comparable_with<
-                        typename iterator<tp_is_const2>::m_base_iterator_t,
-                        m_base_sentinel_t
-                    >
-                )
+                noexcept(noexcept(is_iterator_default_initialized(std::ranges::begin(p_iterator.m_current.m_element_segmentation.tag))))
                 -> bool {
                     return is_iterator_default_initialized(std::ranges::begin(p_iterator.m_current.m_element_segmentation.tag));
                 }
