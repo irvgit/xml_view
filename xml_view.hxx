@@ -273,10 +273,11 @@ namespace irv::views::xml {
                     if (*p_first == '<')
                         break;
                 }
-                ++p_first;
+                if (++p_first == p_last)
+                    return element_segmentation_and_end{element_segmentation{std::move(p_first)}};
                 if (!is_valid_tag_name_start_char(*p_first))
                     return element_segmentation_and_end{element_segmentation{std::move(p_first)}};
-                auto const l_is_processing_instruction = *p_first == '?';
+                auto const l_is_a_processing_instruction = *p_first == '?';
                 auto l_tag_begin = p_first++;
                 for (;; ++p_first) {
                     if (p_first == p_last)
@@ -287,6 +288,7 @@ namespace irv::views::xml {
                 auto l_tag_end = p_first;
 
                 // note: attributes
+                auto l_is_self_closing = false;
                 auto l_attributes_begin = tp_iterator_t{};
                 auto l_attributes_end   = tp_iterator_t{};
                 for (;; ++p_first) {
@@ -295,11 +297,25 @@ namespace irv::views::xml {
                     if (!is_valid_tag_whitespace(*p_first))
                         break;
                 }
-                if (*p_first == '>')
+                if (*p_first == '>') {
+                    if (l_is_a_processing_instruction)
+                        return element_segmentation_and_end{element_segmentation{std::move(p_first)}};
                     ++p_first;
+                }
+                else if (*p_first == '/') {
+                    l_is_self_closing = true;
+                    ++p_first;
+                    if (p_first == p_last)
+                        return element_segmentation_and_end{element_segmentation{std::move(p_first)}};
+                    if (*p_first != '>')
+                        return element_segmentation_and_end{element_segmentation{std::move(p_first)}};
+                    ++p_first;
+                    if (p_first == p_last)
+                        return element_segmentation_and_end{element_segmentation{std::move(p_first)}};
+                }
                 else {
                     l_attributes_begin = p_first;
-                    if (l_is_processing_instruction) {
+                    if (l_is_a_processing_instruction) {
                         auto l_closing_delimiter = std::ranges::search(
                             std::ranges::subrange{
                                 std::move(p_first),
@@ -322,7 +338,7 @@ namespace irv::views::xml {
                         }
                     }
                 }
-                if (l_is_processing_instruction)
+                if (l_is_a_processing_instruction || l_is_self_closing)
                     return element_segmentation_and_end<tp_iterator_t>{
                         element_segmentation{
                             std::move(l_tag_begin),
@@ -346,8 +362,7 @@ namespace irv::views::xml {
                         auto l_potential_body_end = p_first++;
                         if (p_first == p_last)
                             return element_segmentation_and_end{element_segmentation{std::move(p_first)}};
-                        auto const l_is_closing = *p_first == '/';
-                        if (l_is_closing) {
+                        if (*p_first == '/') {
                             ++p_first;
                             if (p_first == p_last)
                                 return element_segmentation_and_end{element_segmentation{std::move(p_first)}};
@@ -388,7 +403,39 @@ namespace irv::views::xml {
                             }
                             else --l_depth;
                         }
-                        else ++l_depth;
+                        else {
+                            if (*p_first == '?') {
+                                auto l_processing_instruction_delimiter_search_result = std::ranges::search(
+                                    std::ranges::subrange{
+                                        std::move(++p_first),
+                                        p_last
+                                    },
+                                    std::string_view{"?>"}
+                                );
+                                if (std::ranges::empty(l_processing_instruction_delimiter_search_result))
+                                    return element_segmentation_and_end{element_segmentation{std::move(p_first)}};
+                                p_first = std::ranges::end(std::move(l_processing_instruction_delimiter_search_result));
+                            }
+                            else {
+                                for (;; ++p_first) {
+                                    if (p_first == p_last)
+                                        return element_segmentation_and_end{element_segmentation{std::move(p_first)}};
+                                    if (*p_first == '/')  {
+                                        if (++p_first == p_last)
+                                            return element_segmentation_and_end{element_segmentation{std::move(p_first)}};
+                                        if (*p_first != '>')
+                                            return element_segmentation_and_end{element_segmentation{std::move(p_first)}};
+                                        ++p_first;
+                                        break;
+                                    }
+                                    else if (*p_first == '>') {
+                                        ++p_first;
+                                        ++l_depth;
+                                        break;
+                                    }
+                                }
+                            }
+                        }
                     }
                     else if (!is_valid_body_char(*p_first))
                         return element_segmentation_and_end{element_segmentation{std::move(p_first)}};
